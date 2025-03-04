@@ -113,7 +113,7 @@ Before you begin, ensure you have the following:
 2. Configure SonarQube in Jenkins:
    - Manage Jenkins > System Configuration
    - Under "SonarQube servers", add a new SonarQube installation:
-     - Name:
+     - Name: Sonar
      - URL: http://ip:9000
      - Add the previously generated token as credentials
 
@@ -121,7 +121,7 @@ Before you begin, ensure you have the following:
    - Manage Jenkins > Global Tool Configuration 
         - under "SonarQube Scanner installations"
              - Add SonarQube scanner 
-                - Name: sonar
+                - Name: Sonar
                 - Install automatically
 
 4. Install OWASP Dependency-Check:
@@ -160,7 +160,7 @@ Before you begin, ensure you have the following:
                    echo 'Checking out code...'
                    script {
                        checkout scm: [$class: 'GitSCM', branches: [[name: 'main']],
-                           userRemoteConfigs: [[url: 'https://github.com/your-repo.git']]]
+                           userRemoteConfigs: [[url: 'https://github.com/RohitGH29/SECURE-CI-CD-DOCKERFLASK.git']]]
                    }
                }
            }
@@ -187,7 +187,7 @@ Before you begin, ensure you have the following:
             steps {
                 echo 'OWASP Dependency check...'
                 dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
-                dependencyCheckPublisher Pattern: '**/dependency-check-report.xml'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
                
             }
         }
