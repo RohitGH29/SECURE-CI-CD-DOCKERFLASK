@@ -115,7 +115,11 @@ Before you begin, ensure you have the following:
    - Under "SonarQube servers", add a new SonarQube installation:
      - Name: Sonar
      - URL: http://ip:9000
-     - Add the previously generated token as credentials
+     - Click on Add 
+        - kind: Secret text
+        - secret: paste SonarQube token
+        - ID: Sonar
+        - Description: Sonar
 
 3. Install SonarQube Scanner:
    - Manage Jenkins > Global Tool Configuration 
