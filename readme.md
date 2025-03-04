@@ -84,9 +84,14 @@ Before you begin, ensure you have the following:
 3. Generate a token on SonarQube:
    - Click on Administration > Security > Users
    - Create a new token for Jenkins
+     - Name: Jenkins
+     - Generate and copy the token for later use
+
    - Configure webhooks in SonarQube:
      - Click on Administration > Configuration > Webhooks
-     - Create a new webhook with the URL: `http://<EC2_PUBLIC_IP>:8080/sonarqube-webhook/`
+     - Create a new webhook with 
+        - Name: Jenkins
+        - URL: `http://<EC2_PUBLIC_IP>:8080/sonarqube-webhook/`
 
 ## Step 3: Install Trivy (Security Scanner)
 
@@ -103,18 +108,29 @@ Before you begin, ensure you have the following:
    - Sonar Quality Gates
    - OWASP Dependency-Check
    - Docker
+   - Pipeline: Stage View
 
 2. Configure SonarQube in Jenkins:
    - Manage Jenkins > System Configuration
-   - Under "SonarQube servers", add a new SonarQube installation
+   - Under "SonarQube servers", add a new SonarQube installation:
+     - Name:
+     - URL: http://ip:9000
+     - Add the previously generated token as credentials
 
 3. Install SonarQube Scanner:
-   - Manage Jenkins > Global Tool Configuration > SonarQube Scanner
-   - Add a SonarQube scanner installation
+   - Manage Jenkins > Global Tool Configuration 
+        - under "SonarQube Scanner installations"
+             - Add SonarQube scanner 
+                - Name: sonar
+                - Install automatically
 
 4. Install OWASP Dependency-Check:
-   - Manage Jenkins > Global Tool Configuration > Dependency-Check
-   - Add a Dependency-Check installation
+   - Manage Jenkins > Global Tool Configuration 
+        - under "Dependency-Check installations"
+            - Add Dependency-Check:
+                - Name: dc
+                - Install automatically
+                - Choose the installer from github.com
 
 ## Step 5: Configure Jenkins Pipeline
 
@@ -158,20 +174,39 @@ Before you begin, ensure you have the following:
                    '''
                }
            }
-           stage('SonarQube Analysis') {
-               steps {
-                   echo 'Running SonarQube Analysis...'
-                   withSonarQubeEnv("Sonar"){
-                       sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectKey=SecureFlask"
-                   }
-               }
-           }
-           stage('OWASP Dependency Check') {
-               steps {
-                   echo 'Running Dependency Check...'
-                   dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
-               }
-           }
+           stage('SonarQube Quality Analysis') {
+            steps {
+                echo 'SonarQube Quality Analysis...'
+                withSonarQubeEnv("Sonar"){
+                    sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=SECURE-CI-CD-DOCKERFLASK -Dsonar.projectKey=SECURE-CI-CD-DOCKERFLASK"
+                }
+                
+            }
+        }
+        stage('OWASP Dependency check') {
+            steps {
+                echo 'OWASP Dependency check...'
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
+                dependencyCheckPublisher Pattern: '**/dependency-check-report.xml'
+               
+            }
+        }
+        stage('SonarQube Quality Gate Scan') {
+            steps {
+                echo 'SonarQube Quality Gate Scan...'
+                timeout(time: 2,unit: "MINUTES"){
+                    waitForQualityGate abortPipeline: false
+                }
+               
+            }
+        }
+        stage('Trivy file system Scan') {
+            steps {
+                echo 'Trivy file system Scan...'
+                sh "trivy fs --format table -o trivy-fs-report.html ."
+               
+            }
+        }
            stage('Build and Push Docker Image') {
                steps {
                    echo 'Building and pushing Docker image...'
