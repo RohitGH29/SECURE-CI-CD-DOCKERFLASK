@@ -134,7 +134,8 @@ Before you begin, ensure you have the following:
             - Add Dependency-Check:
                 - Name: dc
                 - Install automatically
-                - Choose the installer from github.com
+                - click on Add Installer
+                     - Choose the installer from github.com
 
 ## Step 5: Configure Jenkins Pipeline
 
