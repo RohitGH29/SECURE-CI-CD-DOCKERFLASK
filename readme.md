@@ -115,7 +115,7 @@ Before you begin, ensure you have the following:
    - Under "SonarQube servers", add a new SonarQube installation:
      - Name: Sonar
      - URL: http://ip:9000
-     - Click on Add 
+     - Credentials  Click on Add 
         - kind: Secret text
         - secret: paste SonarQube token
         - ID: Sonar
