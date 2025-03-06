@@ -1,27 +1,20 @@
-# Flask Application Deployment Using Jenkins CI/CD Pipeline and Docker
+# Deploy SecureFlask CI/CD Pipeline on EC2 using Jenkins
 
-This project demonstrates setting up a CI/CD pipeline using Jenkins to deploy a Flask application on Docker. The pipeline includes stages for code checkout, installing dependencies, building a Docker image, pushing it to Docker Hub, and deploying it on Docker. The purpose is to provide a step-by-step guide to deploying Flask applications effectively.
-
----
+This guide walks you through deploying a SecureFlask CI/CD pipeline on an AWS EC2 instance using Jenkins, SonarQube, OWASP Dependency-Check, Trivy, and Docker.
 
 ## Prerequisites
 
 Before proceeding, ensure you have the following:
 
 1. **AWS EC2 Instance**:
-   - Launch an **Ubuntu** EC2 instance (Type t3.medium).
+   - Launch an **Ubuntu** EC2 instance (Type t3.large).
    - Open the following ports in the security group:
      - **8080**: For Jenkins access.
      - **5000**: For Flask application access.
+     - **9000**: For Flask application access.
 
-2. **Required Tools**:
-   - Docker
-   - Python 3.x
-   - Jenkins
 
----
-
-## Step 1: Install Required Tools on Your EC2 Instance
+## Step 1: Install Required Software
 
 ### Install Docker
 1. Update the system and install Docker:
@@ -79,35 +72,95 @@ Before proceeding, ensure you have the following:
    sudo systemctl restart jenkins
    ```
 
----
+## Step 2: Install and Configure SonarQube
 
-## Step 2: Configure Jenkins
+1. Start SonarQube Server:
+   ```bash
+   docker run -itd --name SonarQube-Server -p 9000:9000 sonarqube:lts-community
+   ```
 
-### Install Required Plugins
-1. Login to Jenkins and navigate to **Manage Jenkins > Manage Plugins**.
-2. Install the following plugins:
-   - **Docker Pipeline**
-   - **Pipeline: Stage View**
+2. Open your browser and navigate to `http://<EC2_PUBLIC_IP>:9000`
+   - Initial credentials:
+     - Username: admin
+     - Password: admin
 
-### Add Credentials
-1. Navigate to **Manage Jenkins > Credentials**.
-2. Add Docker Hub credentials with:
-   - **ID**: `docker-hub-creds`
-   - **Username**: Your Docker Hub username.
-   - **Password/Token**: Your Docker Hub password or access token.
+3. Generate a token on SonarQube:
+   - Click on Administration > Security > Users
+   - Create a new token for Jenkins
+     - Name: Jenkins
+     - Generate and copy the token for later use
 
-### Create a New Pipeline Job
-1. Go to the Jenkins dashboard and create a new item:
-   - **Name**: `FlaskAppPipeline`
+   - Configure webhooks in SonarQube:
+     - Click on Administration > Configuration > Webhooks
+     - Create a new webhook with 
+        - Name: Jenkins
+        - URL: `http://<EC2_PUBLIC_IP>:8080/sonarqube-webhook/`
+
+## Step 3: Install Trivy (Security Scanner)
+
+1. Download and install Trivy:
+   ```bash
+   wget https://github.com/aquasecurity/trivy/releases/download/v0.18.3/trivy_0.18.3_Linux-64bit.deb
+   sudo dpkg -i trivy_0.18.3_Linux-64bit.deb
+   ```
+
+## Step 4: Configure OWASP Dependency-Check in Jenkins
+
+1. Install required plugins in Jenkins:
+   - SonarQube Scanner
+   - Sonar Quality Gates
+   - OWASP Dependency-Check
+   - Docker
+   - Pipeline: Stage View
+
+2. Configure SonarQube in Jenkins:
+   - Manage Jenkins > System Configuration
+   - Under "SonarQube servers", add a new SonarQube installation:
+     - Name: Sonar
+     - URL: http://ip:9000
+     - Credentials  Click on Add 
+        - kind: Secret text
+        - secret: paste SonarQube token
+        - ID: Sonar
+        - Description: Sonar
+
+3. Install SonarQube Scanner:
+   - Manage Jenkins > Global Tool Configuration 
+        - under "SonarQube Scanner installations"
+             - Add SonarQube scanner 
+                - Name: Sonar
+                - Install automatically
+
+4. Install OWASP Dependency-Check:
+   - Manage Jenkins > Global Tool Configuration 
+        - under "Dependency-Check installations"
+            - Add Dependency-Check:
+                - Name: dc
+                - Install automatically
+                - click on Add Installer
+                     - Choose the installer from github.com
+
+## Step 5: Configure Jenkins Pipeline
+
+1. Add Docker Hub credentials in Jenkins:
+   - Manage Jenkins > Credentials
+   - Add Docker Hub credentials with:
+     - **ID**: `docker-hub-creds`
+     - **Username**: Your Docker Hub username.
+     - **Password/Token**: Your Docker Hub password or access token.
+
+2. Create a new Jenkins pipeline:
+   - **Name**: `SecureFlaskPipeline`
    - **Type**: `Pipeline`
 
-2. Add the following pipeline script in the **Pipeline Definition**:
+3. Use the following pipeline script:
 
    ```groovy
    pipeline {
        agent any
        environment {
            DOCKER_IMAGE = 'your-dockerhub-username/flask-app'
+           SONAR_HOME = tool "Sonar"
        }
        stages {
            stage('Git: Code Checkout') {
@@ -115,7 +168,7 @@ Before proceeding, ensure you have the following:
                    echo 'Checking out code...'
                    script {
                        checkout scm: [$class: 'GitSCM', branches: [[name: 'main']],
-                           userRemoteConfigs: [[url: 'https://github.com/RohitGH29/CI-CD-DockerFlask.git']]]
+                           userRemoteConfigs: [[url: 'https://github.com/RohitGH29/SECURE-CI-CD-DOCKERFLASK.git']]]
                    }
                }
            }
@@ -129,24 +182,52 @@ Before proceeding, ensure you have the following:
                    '''
                }
            }
-           stage('Build Docker Image') {
+           stage('SonarQube Quality Analysis') {
+            steps {
+                echo 'SonarQube Quality Analysis...'
+                withSonarQubeEnv("Sonar"){
+                    sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=SECURE-CI-CD-DOCKERFLASK -Dsonar.projectKey=SECURE-CI-CD-DOCKERFLASK"
+                }
+                
+            }
+        }
+        stage('OWASP Dependency check') {
+            steps {
+                echo 'OWASP Dependency check...'
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+               
+            }
+        }
+        stage('SonarQube Quality Gate Scan') {
+            steps {
+                echo 'SonarQube Quality Gate Scan...'
+                timeout(time: 2,unit: "MINUTES"){
+                    waitForQualityGate abortPipeline: false
+                }
+               
+            }
+        }
+        stage('Trivy file system Scan') {
+            steps {
+                echo 'Trivy file system Scan...'
+                sh "trivy fs --format table -o trivy-fs-report.html ."
+               
+            }
+        }
+           stage('Build and Push Docker Image') {
                steps {
-                   echo 'Building Docker image...'
+                   echo 'Building and pushing Docker image...'
                    sh 'docker build -t ${DOCKER_IMAGE} .'
-               }
-           }
-           stage('Push to Docker Hub') {
-               steps {
-                   echo 'Pushing Docker image to Docker Hub...'
                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
                    }
                    sh 'docker push ${DOCKER_IMAGE}'
                }
            }
-           stage('Deploy on Docker') {
+           stage('Deploy Application') {
                steps {
-                   echo 'Deploying application...'
+                   echo 'Deploying Flask application...'
                    sh '''
                        docker stop flask-app || true
                        docker rm flask-app || true
@@ -158,21 +239,7 @@ Before proceeding, ensure you have the following:
    }
    ```
 
----
-
-## Step 3: Run the Pipeline
-
-1. Trigger the pipeline from Jenkins.
-2. Monitor the pipeline stages:
-   - **Code Checkout**: Fetches the Flask app code from GitHub.
-   - **Install Dependencies**: Installs Python dependencies.
-   - **Build Docker Image**: Builds a Docker image for the Flask app.
-   - **Push to Docker Hub**: Uploads the image to Docker Hub.
-   - **Deploy on Docker**: Runs the Flask app as a Docker container.
-
----
-
-## Step 4: Verify Deployment
+## Step 6: Verify Deployment
 
 1. Open your browser and navigate to `http://<EC2_PUBLIC_IP>:5000`.
 2. You should see the message:
@@ -180,12 +247,14 @@ Before proceeding, ensure you have the following:
    Welcome! You successfully deployed the Flask application on Docker using Jenkins pipeline.
    ```
 
----
-
 ## Additional Notes
 
 - Ensure your `requirements.txt` file is updated with all necessary dependencies for the Flask app.
 - Replace `your-dockerhub-username` in the pipeline script with your actual Docker Hub username.
 - For security, restrict Jenkins credentials visibility to relevant jobs only.
+- Always terminate the EC2 instance after use.
 
----
+## Conclusion
+
+You have successfully set up a SecureFlask CI/CD pipeline on AWS EC2 using Jenkins, Docker, and security tools. 🎉
+
